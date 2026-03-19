@@ -159,8 +159,13 @@ async def stream_events():
     """SSEエンドポイント：処理イベントをリアルタイムで配信する。"""
 
     async def event_generator():
-        queue: asyncio.Queue | None = _session.get("queue")
-        if queue is None:
+        # 再接続直後はキューがセットされるまで最大3秒待つ
+        for _ in range(6):
+            queue: asyncio.Queue | None = _session.get("queue")
+            if queue is not None:
+                break
+            await asyncio.sleep(0.5)
+        else:
             yield 'data: {"type": "error", "message": "処理が開始されていません"}\n\n'
             return
 

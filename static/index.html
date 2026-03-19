@@ -599,6 +599,8 @@ function handleEvent(event) {
       break;
 
     case 'error':
+      // 再接続時の一時的なエラーはログに表示しない
+      if (event.message && event.message.includes('処理が開始されていません')) break;
       addLog(`❌ エラー: ${event.message}`, 'ng');
       break;
   }

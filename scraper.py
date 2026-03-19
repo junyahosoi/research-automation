@@ -188,12 +188,16 @@ async def _fetch_page(
     url: str, client: httpx.AsyncClient
 ) -> tuple[BeautifulSoup | None, str]:
     """URLからHTMLを取得してBeautifulSoupとレスポンステキストを返す。"""
+    import asyncio
     try:
-        resp = await client.get(
-            url,
-            headers=HEADERS,
-            timeout=15.0,
-            follow_redirects=True,
+        resp = await asyncio.wait_for(
+            client.get(
+                url,
+                headers=HEADERS,
+                timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
+                follow_redirects=True,
+            ),
+            timeout=20.0,  # ページ取得全体の上限（どんなに遅くても20秒で打ち切る）
         )
         if resp.status_code != 200:
             return None, ""

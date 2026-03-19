@@ -50,6 +50,7 @@ EC_DOMAINS = {
     "ameblo.jp",
     "hatenablog.com",
     "hatenadiary.jp",
+    "cookpad.com",
     "note.com",
     "linkedin.com",
 }

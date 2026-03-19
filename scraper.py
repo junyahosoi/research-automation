@@ -190,16 +190,25 @@ def _find_contact_form_url(soup: BeautifulSoup, base_url: str) -> str | None:
 
 def _extract_company_name_from_table(soup: BeautifulSoup) -> str:
     """テーブル構造（th/td, dt/dd）から会社名を抽出する。"""
-    label_patterns = ["会社名", "商号", "法人名", "屋号"]
+    # 無条件で採用するラベル
+    strict_patterns = ["会社名", "社名", "商号", "法人名", "屋号"]
+    # 法人格が含まれる場合のみ採用するラベル
+    conditional_patterns = ["名称"]
+    legal_forms = ["株式会社", "有限会社", "合同会社", "一般社団法人", "特定非営利活動法人"]
+
     for cell in soup.find_all(["th", "dt"]):
         cell_text = cell.get_text(strip=True)
-        if any(p in cell_text for p in label_patterns):
-            # 次の兄弟要素または対応するdd/tdを取得
-            sibling = cell.find_next_sibling(["td", "dd"])
-            if sibling:
-                name = sibling.get_text(strip=True)
-                if name and len(name) <= 50:
-                    return name
+        sibling = cell.find_next_sibling(["td", "dd"])
+        if not sibling:
+            continue
+        name = sibling.get_text(strip=True)
+        if not name or len(name) > 50:
+            continue
+        if any(p in cell_text for p in strict_patterns):
+            return name
+        if any(p in cell_text for p in conditional_patterns):
+            if any(lf in name for lf in legal_forms):
+                return name
     return ""
 
 
@@ -292,7 +301,7 @@ async def scrape_company_info(url: str, client: httpx.AsyncClient) -> dict:
     """
     result = {
         "会社名": "",
-        "HP URL": url,
+        "HP URL": "",  # 会社概要ページが見つかった場合のみ設定
         "電話番号": "",
         "FAX番号": "",
         "メールアドレス": "",
@@ -311,8 +320,10 @@ async def scrape_company_info(url: str, client: httpx.AsyncClient) -> dict:
         company_soup, company_html = await _fetch_page(company_page_url, client)
         if company_soup is None:
             company_soup, company_html = top_soup, top_html
+            company_page_url = None  # 取得失敗時はURLも無効
     else:
         company_soup, company_html = top_soup, top_html
+        company_page_url = None
 
     # テーブル構造から会社名を優先抽出
     company_name = _extract_company_name_from_table(company_soup)
@@ -347,13 +358,14 @@ async def scrape_company_info(url: str, client: httpx.AsyncClient) -> dict:
         company_name = ""
     if not _is_valid_email(email):
         email = ""
-    cleaned_url = _clean_url(url)
+    # HP URLは会社概要ページが見つかった場合のみ設定、なければ空欄
+    hp_url = _clean_url(company_page_url) if company_page_url else ""
     cleaned_form = _clean_url(form_url) if form_url else ""
 
     result.update(
         {
             "会社名": company_name,
-            "HP URL": cleaned_url,
+            "HP URL": hp_url,
             "電話番号": phone,
             "FAX番号": fax,
             "メールアドレス": email,

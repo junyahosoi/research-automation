@@ -16,7 +16,7 @@ from scraper import scrape_company_info
 from search import find_official_site
 
 # 必須列名
-REQUIRED_COLUMNS = {"商品名", "売れ筋ランキング", "URL: Amazon", "ASIN", "ブランド"}
+REQUIRED_COLUMNS = {"商品名", "URL: Amazon", "ASIN", "ブランド"}
 
 # 統計キー
 STAT_WHITELIST = "whitelist"

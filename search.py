@@ -3,6 +3,7 @@ Serper.dev Search API ラッパー
 4ステップ検索戦略でブランドの公式サイトを検索する
 """
 
+import asyncio
 import re
 from urllib.parse import urlparse
 
@@ -133,8 +134,9 @@ async def serper_search(
         "num": 5,
     }
     try:
-        resp = await client.post(
-            SERPER_SEARCH_URL, json=payload, headers=headers, timeout=15.0
+        resp = await asyncio.wait_for(
+            client.post(SERPER_SEARCH_URL, json=payload, headers=headers, timeout=8.0),
+            timeout=10.0,  # 検索1回あたりの上限（合計）
         )
 
         if resp.status_code == 429:
@@ -150,7 +152,7 @@ async def serper_search(
         items = data.get("organic", [])
         return items, None
 
-    except httpx.TimeoutException:
+    except (httpx.TimeoutException, asyncio.TimeoutError):
         return [], "timeout"
     except Exception:
         return [], "error"

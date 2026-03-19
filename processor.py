@@ -153,7 +153,9 @@ async def run_pipeline(
         elif flag == "✕":
             stats[STAT_FAIL] += 1
 
-    async with httpx.AsyncClient() as client:
+    # 検索用とスクレイピング用でクライアントを分離（接続プール汚染を防ぐ）
+    search_client = httpx.AsyncClient()
+    async with search_client:
         for row in brands_data:
             brand = row.get("ブランド", "").strip() or "ブランド不明"
             product_name = row.get("商品名", "").strip()
@@ -193,7 +195,7 @@ async def run_pipeline(
             yield {"type": "searching", "brand": brand, "stats": dict(stats)}
 
             official_url, error = await find_official_site(
-                brand, product_name, api_key, cx, client
+                brand, product_name, api_key, cx, search_client
             )
 
             if error == "quota":
@@ -211,8 +213,9 @@ async def run_pipeline(
                 stats[STAT_FAIL] += 1
                 result = _make_empty_result(brand, "✕", row, reason="公式サイト未発見")
             else:
-                # --- スクレイピング ---
-                scraped = await scrape_company_info(official_url, client)
+                # --- スクレイピング（ブランドごとに新しいクライアントを使用）---
+                async with httpx.AsyncClient() as scrape_client:
+                    scraped = await scrape_company_info(official_url, scrape_client)
                 scraped_flag = scraped.get("フラグ", "✕")
                 reason = FLAG_REASONS.get(scraped_flag, "情報取得0件") if scraped_flag != "✕" else "情報取得0件"
                 result = {

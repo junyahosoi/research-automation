@@ -3,6 +3,7 @@ Webスクレイピングモジュール
 公式サイトから会社情報（会社名・電話・FAX・メール・フォームURL）を抽出する
 """
 
+import asyncio
 import re
 from urllib.parse import urljoin, urlparse
 
@@ -188,7 +189,6 @@ async def _fetch_page(
     url: str, client: httpx.AsyncClient
 ) -> tuple[BeautifulSoup | None, str]:
     """URLからHTMLを取得してBeautifulSoupとレスポンステキストを返す。"""
-    import asyncio
     try:
         resp = await asyncio.wait_for(
             client.get(

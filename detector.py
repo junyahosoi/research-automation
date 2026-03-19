@@ -11,6 +11,13 @@ from pathlib import Path
 VOWELS = set("aiueoAIUEO")
 WHITELIST_PATH = Path("whitelist.csv")
 
+# ブランド情報なしと判断するキーワード（小文字で比較）
+NO_BRAND_KEYWORDS = {
+    "ノーブランド品", "ノーブランド", "no brand", "nobrand", "generic",
+    "ブランド不明", "ブランドなし", "n/a", "na", "なし", "不明",
+    "noname", "no name", "unbranded", "ブランド不詳",
+}
+
 # アプリ起動時にホワイトリストをロードする
 _whitelist: set[str] = set()
 
@@ -73,8 +80,12 @@ def classify_brand(brand: str) -> str | None:
     Returns:
         "⚠️ 大手企業の可能性"  : ホワイトリスト一致
         "🚫 中国系OEMの可能性" : OEMパターン一致
+        "⛔ ブランド情報なし"  : ノーブランド系
         None                   : 通常検索が必要
     """
+    if brand.lower().strip() in NO_BRAND_KEYWORDS:
+        return "⛔ ブランド情報なし"
+
     if brand.lower() in _whitelist:
         return "⚠️ 大手企業の可能性"
 

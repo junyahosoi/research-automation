@@ -82,6 +82,7 @@ def parse_and_deduplicate(file_bytes: bytes) -> tuple[list[dict], int]:
 FLAG_REASONS = {
     "⚠️ 大手企業の可能性": "ホワイトリスト該当",
     "🚫 中国系OEMの可能性": "OEMパターン該当",
+    "⛔ ブランド情報なし": "ノーブランド系スキップ",
     "◎": "3項目以上取得",
     "△": "1〜2項目取得",
     "✕": "公式サイト未発見",
@@ -163,6 +164,14 @@ async def run_pipeline(
 
             # --- 分類判定 ---
             flag = classify_brand(brand)
+
+            if flag == "⛔ ブランド情報なし":
+                stats[STAT_FAIL] += 1
+                result = _make_empty_result(brand, flag, row)
+                results.append(result)
+                await checkpoint(brand, result, dict(stats), brands_data, results)
+                yield {"type": "result", "brand": brand, "flag": flag, "stats": dict(stats)}
+                continue
 
             if flag == "⚠️ 大手企業の可能性":
                 stats[STAT_WHITELIST] += 1

@@ -10,7 +10,7 @@ import httpx
 
 SERPER_SEARCH_URL = "https://google.serper.dev/search"
 
-# EC・価格比較サイトのドメイン（これらがトップに来た場合は再検索）
+# EC・価格比較サイトのドメイン（結果から除外）
 EC_DOMAINS = {
     "amazon.co.jp",
     "amazon.com",
@@ -33,7 +33,24 @@ EC_DOMAINS = {
     "ebay.com",
     "aliexpress.com",
     "taobao.com",
+    "yahoo.co.jp",
+    "zozo.jp",
+    "shopify.com",
+    "base.ec",
+    "stores.jp",
 }
+
+# 検索クエリに付加するEC除外文字列
+EC_EXCLUSION = (
+    " -site:amazon.co.jp -site:rakuten.co.jp -site:yahoo.co.jp"
+    " -site:mercari.com -site:kakaku.com -site:zozo.jp"
+)
+
+# 通販・ショップパスのパターン（URLパスに含まれる場合は通販ページと判断）
+SHOP_PATH_PATTERNS = [
+    "/shop/", "/cart/", "/products/", "/product/", "/item/",
+    "/ec/", "/store/", "/buy/", "/order/", "/catalog/",
+]
 
 
 def is_ec_site(url: str) -> bool:
@@ -45,6 +62,40 @@ def is_ec_site(url: str) -> bool:
         return any(host == ec or host.endswith("." + ec) for ec in EC_DOMAINS)
     except Exception:
         return False
+
+
+def is_shop_path(url: str) -> bool:
+    """URLパスが通販ページのパターンかどうかを判定する。"""
+    try:
+        path = urlparse(url).path.lower()
+        return any(p in path for p in SHOP_PATH_PATTERNS)
+    except Exception:
+        return False
+
+
+def to_root_url(url: str) -> str:
+    """URLのルートドメインのみを返す（通販パスを除去）。"""
+    try:
+        parsed = urlparse(url)
+        return f"{parsed.scheme}://{parsed.netloc}/"
+    except Exception:
+        return url
+
+
+def pick_best_url(results: list[dict]) -> str | None:
+    """検索結果の上位5件から最適なURLを選ぶ。
+    ECサイトを除外し、通販パスのURLはルートに切り替える。
+    """
+    for item in results[:5]:
+        url = item.get("link", "")
+        if not url:
+            continue
+        if is_ec_site(url):
+            continue
+        if is_shop_path(url):
+            return to_root_url(url)
+        return url
+    return None
 
 
 def extract_japanese_keywords(product_name: str) -> str:
@@ -116,29 +167,36 @@ async def find_official_site(
         url: 公式サイトURL（見つからない場合はNone）
         error_code: None = 成功, "quota" = クォータ超過
     """
-    # Step 1: "{brand} 公式サイト" で検索
-    query1 = f"{brand} 公式サイト"
+    # Step 1: "{brand} 株式会社 OR 会社概要" + EC除外
+    query1 = f'"{brand}" 株式会社 OR 会社概要{EC_EXCLUSION}'
     results1, err = await serper_search(query1, api_key, client)
     if err == "quota":
         return None, "quota"
 
-    if results1:
-        top_url = results1[0].get("link", "")
-        if top_url and not is_ec_site(top_url):
-            return top_url, None
+    url = pick_best_url(results1)
+    if url:
+        return url, None
 
-        # Step 2: ECサイトだった場合、商品名からCJKキーワードを抽出して再検索
-        jp_keywords = extract_japanese_keywords(product_name)
-        if jp_keywords:
-            query2 = f"{jp_keywords} メーカー 公式サイト"
-            results2, err = await serper_search(query2, api_key, client)
-            if err == "quota":
-                return None, "quota"
+    # Step 2: "{brand} 公式" + EC除外
+    query2 = f'"{brand}" 公式{EC_EXCLUSION}'
+    results2, err = await serper_search(query2, api_key, client)
+    if err == "quota":
+        return None, "quota"
 
-            if results2:
-                top_url2 = results2[0].get("link", "")
-                if top_url2 and not is_ec_site(top_url2):
-                    return top_url2, None
+    url = pick_best_url(results2)
+    if url:
+        return url, None
 
-    # Step 3: 見つからない
+    # Step 3: 商品名の日本語キーワードで再検索
+    jp_keywords = extract_japanese_keywords(product_name)
+    if jp_keywords:
+        query3 = f"{jp_keywords} メーカー 公式{EC_EXCLUSION}"
+        results3, err = await serper_search(query3, api_key, client)
+        if err == "quota":
+            return None, "quota"
+
+        url = pick_best_url(results3)
+        if url:
+            return url, None
+
     return None, None

@@ -319,9 +319,13 @@ async def scrape_company_info(url: str, client: httpx.AsyncClient) -> dict:
     if company_page_url and company_page_url != url:
         company_soup, company_html = await _fetch_page(company_page_url, client)
         if company_soup is None:
+            # 取得失敗時はトップページのデータを使うが、URLは記録を維持（リンク確認済みのため）
             company_soup, company_html = top_soup, top_html
-            company_page_url = None  # 取得失敗時はURLも無効
+    elif company_page_url == url:
+        # 入力URLが既に会社概要ページ → そのまま使用（URLも保持）
+        company_soup, company_html = top_soup, top_html
     else:
+        # 会社概要ページのリンクが見つからなかった
         company_soup, company_html = top_soup, top_html
         company_page_url = None
 

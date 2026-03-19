@@ -163,15 +163,22 @@ async def find_official_site(
     cx: str,
     client: httpx.AsyncClient,
 ) -> tuple[str | None, str | None]:
-    """ブランドの公式サイトURLを4ステップ戦略で検索する。
+    """ブランドの公式サイトURLを4ステップ戦略で検索する（精度優先）。
+
+    Step 1・2: ブランド名＋商品キーワードで精度重視検索
+    Step 3:    ブランド名のみで広めのフォールバック
+    Step 4:    商品キーワードのみで最終探索
 
     Returns:
         (url, error_code)
         url: 公式サイトURL（見つからない場合はNone）
         error_code: None = 成功, "quota" = クォータ超過
     """
-    # Step 1: "{brand} 株式会社 OR 会社概要" + EC除外
-    query1 = f'"{brand}" 株式会社 OR 会社概要{EC_EXCLUSION}'
+    jp_keywords = extract_japanese_keywords(product_name)
+    context = f" {jp_keywords}" if jp_keywords else ""
+
+    # Step 1: "{brand} + 商品キーワード + 株式会社 OR 会社概要" + EC除外（精度最重視）
+    query1 = f'"{brand}"{context} 株式会社 OR 会社概要{EC_EXCLUSION}'
     results1, err = await serper_search(query1, api_key, client)
     if err == "quota":
         return None, "quota"
@@ -180,8 +187,8 @@ async def find_official_site(
     if url:
         return url, None
 
-    # Step 2: "{brand} 公式" + EC除外
-    query2 = f'"{brand}" 公式{EC_EXCLUSION}'
+    # Step 2: "{brand} + 商品キーワード + 公式" + EC除外（精度重視）
+    query2 = f'"{brand}"{context} 公式{EC_EXCLUSION}'
     results2, err = await serper_search(query2, api_key, client)
     if err == "quota":
         return None, "quota"
@@ -190,26 +197,25 @@ async def find_official_site(
     if url:
         return url, None
 
-    # Step 3: 商品名の日本語キーワードで再検索
-    jp_keywords = extract_japanese_keywords(product_name)
-    if jp_keywords:
-        query3 = f"{jp_keywords} メーカー 公式{EC_EXCLUSION}"
-        results3, err = await serper_search(query3, api_key, client)
-        if err == "quota":
-            return None, "quota"
-
-        url = pick_best_url(results3)
-        if url:
-            return url, None
-
-    # Step 4: "{brand} 会社概要 OR コーポレート" + EC除外（カテゴリ汎用フォールバック）
-    query4 = f'"{brand}" 会社概要 OR コーポレート{EC_EXCLUSION}'
-    results4, err = await serper_search(query4, api_key, client)
+    # Step 3: "{brand} 会社概要 OR コーポレート" + EC除外（商品キーワードなし・広めのフォールバック）
+    query3 = f'"{brand}" 会社概要 OR コーポレート{EC_EXCLUSION}'
+    results3, err = await serper_search(query3, api_key, client)
     if err == "quota":
         return None, "quota"
 
-    url = pick_best_url(results4)
+    url = pick_best_url(results3)
     if url:
         return url, None
+
+    # Step 4: 商品キーワード + メーカー 公式（ブランド名なし・最終手段）
+    if jp_keywords:
+        query4 = f"{jp_keywords} メーカー 公式{EC_EXCLUSION}"
+        results4, err = await serper_search(query4, api_key, client)
+        if err == "quota":
+            return None, "quota"
+
+        url = pick_best_url(results4)
+        if url:
+            return url, None
 
     return None, None

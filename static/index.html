@@ -275,16 +275,11 @@
 
   <!-- Step 2: API 設定 -->
   <div class="card" id="api-card" style="display:none;">
-    <div class="section-title">Step 2 — Google Custom Search API 設定</div>
+    <div class="section-title">Step 2 — Serper.dev API 設定</div>
     <div class="field-row">
       <label class="field-label" for="api-key">APIキー</label>
-      <input type="password" id="api-key" placeholder="AIza..." autocomplete="off">
-      <div class="hint">Google Cloud Console で発行した Custom Search JSON API キー</div>
-    </div>
-    <div class="field-row">
-      <label class="field-label" for="cx">検索エンジンID (cx)</label>
-      <input type="text" id="cx" placeholder="012345678..." autocomplete="off">
-      <div class="hint">Programmable Search Engine の検索エンジンID</div>
+      <input type="password" id="api-key" placeholder="APIキーを入力..." autocomplete="off">
+      <div class="hint">serper.dev で発行した API キー</div>
     </div>
     <div style="margin-top:8px;">
       <button class="btn btn-primary" id="start-btn" disabled>🚀 リサーチ開始</button>
@@ -358,15 +353,10 @@ let resumeMode = false; // 再開時は true
 // localStorage: APIキー・CX の保存・復元
 // ---------------------------------------------------------------------------
 window.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('api-key').value = localStorage.getItem('googleApiKey') || '';
-  document.getElementById('cx').value = localStorage.getItem('googleCx') || '';
+  document.getElementById('api-key').value = localStorage.getItem('serperApiKey') || '';
 
   document.getElementById('api-key').addEventListener('input', e => {
-    localStorage.setItem('googleApiKey', e.target.value);
-    updateStartBtn();
-  });
-  document.getElementById('cx').addEventListener('input', e => {
-    localStorage.setItem('googleCx', e.target.value);
+    localStorage.setItem('serperApiKey', e.target.value);
     updateStartBtn();
   });
 
@@ -429,8 +419,7 @@ async function uploadFile(file) {
 function updateStartBtn() {
   const btn = document.getElementById('start-btn');
   const apiKey = document.getElementById('api-key').value.trim();
-  const cx = document.getElementById('cx').value.trim();
-  btn.disabled = !(state === 'uploaded' && apiKey && cx);
+  btn.disabled = !(state === 'uploaded' && apiKey);
 }
 
 document.getElementById('start-btn').addEventListener('click', () => {
@@ -476,8 +465,7 @@ async function startResume() {
 
       // APIキー入力済みなら直接開始
       const apiKey = document.getElementById('api-key').value.trim();
-      const cx = document.getElementById('cx').value.trim();
-      if (apiKey && cx) {
+      if (apiKey) {
         startProcessing(true);
       }
     }
@@ -489,8 +477,7 @@ async function startResume() {
 // ---------------------------------------------------------------------------
 async function startProcessing(resume) {
   const apiKey = document.getElementById('api-key').value.trim();
-  const cx = document.getElementById('cx').value.trim();
-  if (!apiKey || !cx) { showError('APIキーと検索エンジンIDを入力してください。'); return; }
+  if (!apiKey) { showError('APIキーを入力してください。'); return; }
 
   state = 'processing';
   document.getElementById('start-btn').disabled = true;
@@ -503,7 +490,7 @@ async function startProcessing(resume) {
     const res = await fetch('/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: apiKey, cx, resume }),
+      body: JSON.stringify({ api_key: apiKey, cx: '', resume }),
     });
     if (!res.ok) {
       const data = await res.json();

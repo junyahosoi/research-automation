@@ -95,10 +95,10 @@ async def start_processing(request: Request):
     cx: str = body.get("cx", "").strip()
     resume: bool = body.get("resume", False)
 
-    if not api_key or not cx:
+    if not api_key:
         return JSONResponse(
             status_code=400,
-            content={"error": "APIキーと検索エンジンIDは必須です"},
+            content={"error": "APIキーは必須です"},
         )
 
     resume_from: set[str] = set()

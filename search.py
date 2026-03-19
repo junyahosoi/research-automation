@@ -1,5 +1,5 @@
 """
-Google Custom Search API ラッパー
+Serper.dev Search API ラッパー
 3ステップ検索戦略でブランドの公式サイトを検索する
 """
 
@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-GOOGLE_SEARCH_URL = "https://www.googleapis.com/customsearch/v1"
+SERPER_SEARCH_URL = "https://google.serper.dev/search"
 
 # EC・価格比較サイトのドメイン（これらがトップに来た場合は再検索）
 EC_DOMAINS = {
@@ -56,49 +56,44 @@ def extract_japanese_keywords(product_name: str) -> str:
     return " ".join(segments[:3])
 
 
-async def google_search(
+async def serper_search(
     query: str,
     api_key: str,
-    cx: str,
     client: httpx.AsyncClient,
 ) -> tuple[list[dict], str | None]:
-    """Google Custom Search APIを呼び出す。
+    """Serper.dev APIを呼び出す。
 
     Returns:
         (results, error_code)
         error_code: None = 成功, "quota" = クォータ超過, "auth_error" = 認証エラー,
                     "timeout" = タイムアウト, "error" = その他エラー
     """
-    params = {
-        "key": api_key,
-        "cx": cx,
+    headers = {
+        "X-API-KEY": api_key,
+        "Content-Type": "application/json",
+    }
+    payload = {
         "q": query,
-        "num": 5,
-        "lr": "lang_ja",
         "gl": "jp",
+        "hl": "ja",
+        "num": 5,
     }
     try:
-        resp = await client.get(GOOGLE_SEARCH_URL, params=params, timeout=15.0)
+        resp = await client.post(
+            SERPER_SEARCH_URL, json=payload, headers=headers, timeout=15.0
+        )
 
         if resp.status_code == 429:
             return [], "quota"
 
-        if resp.status_code == 403:
-            try:
-                data = resp.json()
-                errors = data.get("error", {}).get("errors", [{}])
-                reason = errors[0].get("reason", "") if errors else ""
-                if "rateLimitExceeded" in reason or "dailyLimitExceeded" in reason:
-                    return [], "quota"
-            except Exception:
-                pass
+        if resp.status_code in (401, 403):
             return [], "auth_error"
 
         if resp.status_code != 200:
             return [], "error"
 
         data = resp.json()
-        items = data.get("items", [])
+        items = data.get("organic", [])
         return items, None
 
     except httpx.TimeoutException:
@@ -123,7 +118,7 @@ async def find_official_site(
     """
     # Step 1: "{brand} 公式サイト" で検索
     query1 = f"{brand} 公式サイト"
-    results1, err = await google_search(query1, api_key, cx, client)
+    results1, err = await serper_search(query1, api_key, client)
     if err == "quota":
         return None, "quota"
 
@@ -136,7 +131,7 @@ async def find_official_site(
         jp_keywords = extract_japanese_keywords(product_name)
         if jp_keywords:
             query2 = f"{jp_keywords} メーカー 公式サイト"
-            results2, err = await google_search(query2, api_key, cx, client)
+            results2, err = await serper_search(query2, api_key, client)
             if err == "quota":
                 return None, "quota"
 

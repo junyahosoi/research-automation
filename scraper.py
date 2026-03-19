@@ -5,10 +5,56 @@ Webスクレイピングモジュール
 
 import asyncio
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse, parse_qs, urlencode
 
 import httpx
 from bs4 import BeautifulSoup
+
+# URLから除去するトラッキングパラメータ
+_TRACKING_PARAMS = {"srsltid", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "_ga"}
+
+# 無効なメールドメイン（ダミー・エラー監視系）
+_INVALID_EMAIL_DOMAINS = {"example.com", "example.jp", "example.net", "sentry.io", "mailchimp.com"}
+
+# 無効なメールの拡張子パターン（画像ファイル名の誤取得）
+_IMAGE_EXTENSIONS = (".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico")
+
+
+def _clean_url(url: str) -> str:
+    """URLからトラッキングパラメータを除去する。"""
+    try:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        cleaned = {k: v for k, v in params.items() if k not in _TRACKING_PARAMS}
+        new_query = urlencode(cleaned, doseq=True)
+        return urlunparse(parsed._replace(query=new_query))
+    except Exception:
+        return url
+
+
+def _is_valid_email(email: str) -> bool:
+    """メールアドレスとして有効かどうかを検証する。"""
+    if not email or "@" not in email:
+        return False
+    # 画像ファイル名の誤取得を除外
+    local = email.split("@")[0].lower()
+    if any(local.endswith(ext) for ext in _IMAGE_EXTENSIONS):
+        return False
+    # 無効ドメインを除外
+    domain = email.split("@")[-1].lower()
+    if domain in _INVALID_EMAIL_DOMAINS:
+        return False
+    return True
+
+
+def _is_valid_company_name(name: str) -> bool:
+    """会社名として有効かどうかを検証する（文章断片を除外）。"""
+    if not name:
+        return False
+    # 文章末尾パターンで終わる場合は無効
+    if re.search(r"[。、．,]$|です。?$|ます。?$|した。?$|して$|であり$", name):
+        return False
+    return True
 
 # 会社概要ページのリンクパターン
 COMPANY_PAGE_PATTERNS = [
@@ -117,8 +163,8 @@ def _find_contact_form_url(soup: BeautifulSoup, base_url: str) -> str | None:
     for a in soup.find_all("a", href=True):
         text = a.get_text(strip=True)
         href = a["href"]
-        # mailto: や # のみのリンクは除外
-        if href.startswith("mailto:") or href.strip() == "#":
+        # mailto: / # / javascript: リンクは除外
+        if href.startswith("mailto:") or href.startswith("javascript:") or href.strip() == "#":
             continue
         for pattern in CONTACT_FORM_PATTERNS:
             if re.search(pattern, text, re.IGNORECASE) or re.search(
@@ -282,13 +328,22 @@ async def scrape_company_info(url: str, client: httpx.AsyncClient) -> dict:
         if email_match:
             email = email_match.group(0)
 
+    # バリデーション・クリーニング
+    if not _is_valid_company_name(company_name):
+        company_name = ""
+    if not _is_valid_email(email):
+        email = ""
+    cleaned_url = _clean_url(url)
+    cleaned_form = _clean_url(form_url) if form_url else ""
+
     result.update(
         {
             "会社名": company_name,
+            "HP URL": cleaned_url,
             "電話番号": phone,
             "FAX番号": fax,
             "メールアドレス": email,
-            "フォームURL": form_url or "",
+            "フォームURL": cleaned_form,
         }
     )
     result["フラグ"] = _determine_flag(result)

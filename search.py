@@ -42,6 +42,15 @@ EC_DOMAINS = {
     "instagram.com",
     "alibaba.com",
     "info.gbiz.go.jp",
+    "rakuten.ne.jp",
+    "tiktok.com",
+    "twitter.com",
+    "facebook.com",
+    "youtube.com",
+    "ameblo.jp",
+    "hatenablog.com",
+    "note.com",
+    "linkedin.com",
 }
 
 # 検索クエリに付加するEC除外文字列

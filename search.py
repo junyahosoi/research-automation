@@ -1,6 +1,6 @@
 """
 Serper.dev Search API ラッパー
-3ステップ検索戦略でブランドの公式サイトを検索する
+4ステップ検索戦略でブランドの公式サイトを検索する
 """
 
 import re
@@ -38,6 +38,9 @@ EC_DOMAINS = {
     "shopify.com",
     "base.ec",
     "stores.jp",
+    "instagram.com",
+    "alibaba.com",
+    "info.gbiz.go.jp",
 }
 
 # 検索クエリに付加するEC除外文字列
@@ -160,7 +163,7 @@ async def find_official_site(
     cx: str,
     client: httpx.AsyncClient,
 ) -> tuple[str | None, str | None]:
-    """ブランドの公式サイトURLを3ステップ戦略で検索する。
+    """ブランドの公式サイトURLを4ステップ戦略で検索する。
 
     Returns:
         (url, error_code)
@@ -198,5 +201,15 @@ async def find_official_site(
         url = pick_best_url(results3)
         if url:
             return url, None
+
+    # Step 4: "{brand} 会社概要 OR コーポレート" + EC除外（カテゴリ汎用フォールバック）
+    query4 = f'"{brand}" 会社概要 OR コーポレート{EC_EXCLUSION}'
+    results4, err = await serper_search(query4, api_key, client)
+    if err == "quota":
+        return None, "quota"
+
+    url = pick_best_url(results4)
+    if url:
+        return url, None
 
     return None, None

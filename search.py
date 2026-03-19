@@ -88,13 +88,15 @@ def to_root_url(url: str) -> str:
 
 def pick_best_url(results: list[dict]) -> str | None:
     """検索結果の上位5件から最適なURLを選ぶ。
-    ECサイトを除外し、通販パスのURLはルートに切り替える。
+    ECサイト・PDFを除外し、通販パスのURLはルートに切り替える。
     """
     for item in results[:5]:
         url = item.get("link", "")
         if not url:
             continue
         if is_ec_site(url):
+            continue
+        if url.lower().endswith(".pdf"):
             continue
         if is_shop_path(url):
             return to_root_url(url)

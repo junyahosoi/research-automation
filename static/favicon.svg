@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- 背景円 -->
+  <circle cx="32" cy="32" r="32" fill="#2563eb"/>
+  <!-- 虫眼鏡のレンズ（円） -->
+  <circle cx="27" cy="26" r="12" fill="none" stroke="white" stroke-width="4.5"/>
+  <!-- 虫眼鏡の柄 -->
+  <line x1="36" y1="35" x2="48" y2="47" stroke="white" stroke-width="4.5" stroke-linecap="round"/>
+</svg>

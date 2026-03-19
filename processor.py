@@ -1,0 +1,215 @@
+"""
+コアパイプラインモジュール
+CSVパース・重複除去・ブランド処理（検索・スクレイピング）を担う
+"""
+
+import asyncio
+import csv
+import io
+from typing import AsyncGenerator
+
+import httpx
+
+from detector import classify_brand
+from progress_store import checkpoint, mark_completed
+from scraper import scrape_company_info
+from search import find_official_site
+
+# 必須列名
+REQUIRED_COLUMNS = {"商品名", "売れ筋ランキング", "URL: Amazon", "ASIN", "ブランド"}
+
+# 統計キー
+STAT_WHITELIST = "whitelist"
+STAT_OEM = "oem"
+STAT_SUCCESS = "success"
+STAT_FAIL = "fail"
+
+
+def parse_and_deduplicate(file_bytes: bytes) -> tuple[list[dict], int]:
+    """UTF-8 BOM付きCSVをパースして重複除去する。
+
+    Args:
+        file_bytes: アップロードされたCSVのバイトデータ
+
+    Returns:
+        (deduplicated_rows, original_count)
+        deduplicated_rows: ブランド列で重複除去した行リスト（初出優先）
+        original_count: 除去前の行数
+
+    Raises:
+        ValueError: 必須列が不足している場合
+    """
+    try:
+        text = file_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        # BOMなしUTF-8にフォールバック
+        try:
+            text = file_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            raise ValueError(
+                "CSVファイルの文字コードを読み込めませんでした。UTF-8（BOMあり）で保存してください。"
+            )
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise ValueError("CSVファイルが空です。")
+
+    # 必須列チェック
+    existing = set(reader.fieldnames)
+    missing = REQUIRED_COLUMNS - existing
+    if missing:
+        raise ValueError(
+            f"以下の必須列が見つかりません: {', '.join(sorted(missing))}"
+        )
+
+    all_rows = list(reader)
+    original_count = len(all_rows)
+
+    # ブランド列で重複除去（初出優先、空欄は「ブランド不明」として扱う）
+    seen: dict[str, dict] = {}
+    for row in all_rows:
+        brand = row.get("ブランド", "").strip()
+        if not brand:
+            brand = "ブランド不明"
+            row = dict(row)
+            row["ブランド"] = brand
+        if brand not in seen:
+            seen[brand] = row
+
+    return list(seen.values()), original_count
+
+
+def _make_empty_result(brand: str, flag: str) -> dict:
+    """ホワイトリスト・OEM判定時の空の結果を生成する。"""
+    return {
+        "ブランド名": brand,
+        "会社名": "",
+        "HP URL": "",
+        "電話番号": "",
+        "FAX番号": "",
+        "メールアドレス": "",
+        "フォームURL": "",
+        "フラグ": flag,
+    }
+
+
+async def run_pipeline(
+    brands_data: list[dict],
+    api_key: str,
+    cx: str,
+    resume_from: set[str],
+    results: list[dict],
+) -> AsyncGenerator[dict, None]:
+    """ブランド処理パイプライン（非同期ジェネレータ）。
+
+    各ブランドを処理してSSEイベントdictをyieldする。
+
+    Args:
+        brands_data: 重複除去済みのブランド行リスト
+        api_key: Google Custom Search APIキー
+        cx: 検索エンジンID
+        resume_from: すでに処理済みのブランド名セット（再開時）
+        results: 既存の結果リスト（再開時に引き継ぐ）
+
+    Yields:
+        dict: SSEイベント
+            - type="searching": 検索中 {brand, stats}
+            - type="result": 処理完了 {brand, flag, stats}
+            - type="quota": クォータ超過 {stats, processed, total}
+            - type="done": 全件完了 {stats}
+    """
+    stats = {
+        STAT_WHITELIST: 0,
+        STAT_OEM: 0,
+        STAT_SUCCESS: 0,
+        STAT_FAIL: 0,
+    }
+
+    # 再開時は既存の統計を引き継ぐ（簡易カウント）
+    for r in results:
+        flag = r.get("フラグ", "")
+        if flag == "⚠️ 大手企業の可能性":
+            stats[STAT_WHITELIST] += 1
+        elif flag == "🚫 中国系OEMの可能性":
+            stats[STAT_OEM] += 1
+        elif flag in ("◎", "△"):
+            stats[STAT_SUCCESS] += 1
+        elif flag == "✕":
+            stats[STAT_FAIL] += 1
+
+    async with httpx.AsyncClient() as client:
+        for row in brands_data:
+            brand = row.get("ブランド", "").strip() or "ブランド不明"
+            product_name = row.get("商品名", "").strip()
+
+            # 再開時はスキップ
+            if brand in resume_from:
+                continue
+
+            # --- 分類判定 ---
+            flag = classify_brand(brand)
+
+            if flag == "⚠️ 大手企業の可能性":
+                stats[STAT_WHITELIST] += 1
+                result = _make_empty_result(brand, flag)
+                results.append(result)
+                await checkpoint(brand, result, dict(stats), brands_data, results)
+                yield {"type": "result", "brand": brand, "flag": flag, "stats": dict(stats)}
+                continue
+
+            if flag == "🚫 中国系OEMの可能性":
+                stats[STAT_OEM] += 1
+                result = _make_empty_result(brand, flag)
+                results.append(result)
+                await checkpoint(brand, result, dict(stats), brands_data, results)
+                yield {"type": "result", "brand": brand, "flag": flag, "stats": dict(stats)}
+                continue
+
+            # --- Google検索 ---
+            yield {"type": "searching", "brand": brand, "stats": dict(stats)}
+
+            official_url, error = await find_official_site(
+                brand, product_name, api_key, cx, client
+            )
+
+            if error == "quota":
+                processed_count = len(results)
+                remaining = len(brands_data) - processed_count
+                yield {
+                    "type": "quota",
+                    "stats": dict(stats),
+                    "processed": processed_count,
+                    "remaining": remaining,
+                }
+                return
+
+            if not official_url:
+                stats[STAT_FAIL] += 1
+                result = _make_empty_result(brand, "✕")
+                result["フラグ"] = "✕"
+            else:
+                # --- スクレイピング ---
+                scraped = await scrape_company_info(official_url, client)
+                result = {
+                    "ブランド名": brand,
+                    **scraped,
+                }
+                if result["フラグ"] in ("◎", "△"):
+                    stats[STAT_SUCCESS] += 1
+                else:
+                    stats[STAT_FAIL] += 1
+
+            results.append(result)
+            await checkpoint(brand, result, dict(stats), brands_data, results)
+            yield {
+                "type": "result",
+                "brand": brand,
+                "flag": result["フラグ"],
+                "stats": dict(stats),
+            }
+
+            # スクレイピング対象サイトへの丁寧なアクセス間隔
+            await asyncio.sleep(1.0)
+
+    await mark_completed(dict(stats), results, brands_data)
+    yield {"type": "done", "stats": dict(stats)}

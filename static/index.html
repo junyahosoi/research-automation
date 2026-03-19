@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ブランドリサーチツール</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    min-height: 100vh;
+    padding: 24px 16px;
+  }
+
+  .container {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: #1a1a2e;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+
+  /* ドロップゾーン */
+  #drop-zone {
+    border: 2px dashed #c0c8d8;
+    border-radius: 10px;
+    padding: 40px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: #fafbfc;
+  }
+  #drop-zone.drag-over {
+    border-color: #4f6ef7;
+    background: #f0f3ff;
+  }
+  #drop-zone .icon { font-size: 2.5rem; margin-bottom: 12px; }
+  #drop-zone p { color: #6b7a99; font-size: 0.95rem; }
+  #drop-zone strong { color: #4f6ef7; }
+  #file-input { display: none; }
+
+  /* 重複除去カウント */
+  #dedup-info {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #2d6a4f;
+    background: #d8f3dc;
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-top: 12px;
+    display: none;
+  }
+
+  /* API設定 */
+  .field-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #4a5568;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .field-row { margin-bottom: 14px; }
+  input[type="text"], input[type="password"] {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid #d1d9e6;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="text"]:focus, input[type="password"]:focus {
+    border-color: #4f6ef7;
+  }
+  .hint { font-size: 0.78rem; color: #8a97b0; margin-top: 4px; }
+
+  /* ボタン */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 28px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: #4f6ef7; color: #fff; }
+  .btn-primary:hover:not(:disabled) { opacity: 0.88; }
+  .btn-success { background: #38a169; color: #fff; }
+  .btn-success:hover:not(:disabled) { opacity: 0.88; }
+  .btn-secondary { background: #e2e8f0; color: #4a5568; }
+  .btn-secondary:hover { background: #cbd5e0; }
+  .btn-danger { background: #e53e3e; color: #fff; }
+
+  /* 進捗カード */
+  #progress-card { display: none; }
+
+  .stats-bar {
+    background: #f7f8fc;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 0.9rem;
+    line-height: 1.8;
+    border: 1px solid #e2e8f0;
+  }
+  .stats-bar .current-brand {
+    font-weight: 600;
+    color: #4f6ef7;
+    word-break: break-all;
+  }
+  .stats-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .stat-chip {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  /* プログレスバー */
+  .progress-bar-wrap {
+    background: #e2e8f0;
+    border-radius: 99px;
+    height: 8px;
+    margin: 14px 0;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4f6ef7, #7b5ea7);
+    border-radius: 99px;
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+  .progress-label {
+    font-size: 0.82rem;
+    color: #6b7a99;
+    text-align: right;
+    margin-top: 4px;
+  }
+
+  /* ログ */
+  #log {
+    max-height: 220px;
+    overflow-y: auto;
+    font-size: 0.8rem;
+    color: #4a5568;
+    background: #f7f8fc;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-top: 14px;
+    border: 1px solid #e2e8f0;
+  }
+  #log p { margin-bottom: 2px; }
+  #log p.ok { color: #2d6a4f; }
+  #log p.ng { color: #c53030; }
+  #log p.wl { color: #b7791f; }
+  #log p.oem { color: #6b46c1; }
+
+  /* クォータ停止バナー */
+  #quota-banner {
+    display: none;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-size: 0.92rem;
+    color: #856404;
+    line-height: 1.6;
+  }
+
+  /* 完了バナー */
+  #done-banner {
+    display: none;
+    background: #d4edda;
+    border: 1px solid #28a745;
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-size: 0.95rem;
+    color: #155724;
+    line-height: 1.6;
+  }
+
+  /* モーダル */
+  #modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  #modal-overlay.show { display: flex; }
+  #modal {
+    background: #fff;
+    border-radius: 14px;
+    padding: 32px 28px;
+    max-width: 420px;
+    width: 90%;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  }
+  #modal h2 { font-size: 1.1rem; margin-bottom: 12px; }
+  #modal p { font-size: 0.9rem; color: #4a5568; margin-bottom: 20px; line-height: 1.6; }
+  .modal-actions { display: flex; gap: 12px; }
+
+  /* エラーメッセージ */
+  #error-msg {
+    display: none;
+    background: #fff5f5;
+    border: 1px solid #fc8181;
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: #c53030;
+    font-size: 0.88rem;
+    margin-top: 10px;
+  }
+
+  .section-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8a97b0;
+    margin-bottom: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🔍 ブランドリサーチツール</h1>
+
+  <!-- Step 1: CSV アップロード -->
+  <div class="card" id="upload-card">
+    <div class="section-title">Step 1 — Keepa CSV をアップロード</div>
+    <div id="drop-zone">
+      <div class="icon">📂</div>
+      <p>CSVファイルをここにドラッグ&ドロップ</p>
+      <p style="margin-top:8px;"><strong>または クリックして選択</strong></p>
+      <p style="margin-top:8px;font-size:0.78rem;">必須列：商品名 / 売れ筋ランキング / URL: Amazon / ASIN / ブランド</p>
+    </div>
+    <input type="file" id="file-input" accept=".csv">
+    <div id="dedup-info"></div>
+    <div id="error-msg"></div>
+  </div>
+
+  <!-- Step 2: API 設定 -->
+  <div class="card" id="api-card" style="display:none;">
+    <div class="section-title">Step 2 — Google Custom Search API 設定</div>
+    <div class="field-row">
+      <label class="field-label" for="api-key">APIキー</label>
+      <input type="password" id="api-key" placeholder="AIza..." autocomplete="off">
+      <div class="hint">Google Cloud Console で発行した Custom Search JSON API キー</div>
+    </div>
+    <div class="field-row">
+      <label class="field-label" for="cx">検索エンジンID (cx)</label>
+      <input type="text" id="cx" placeholder="012345678..." autocomplete="off">
+      <div class="hint">Programmable Search Engine の検索エンジンID</div>
+    </div>
+    <div style="margin-top:8px;">
+      <button class="btn btn-primary" id="start-btn" disabled>🚀 リサーチ開始</button>
+    </div>
+  </div>
+
+  <!-- 処理中 -->
+  <div class="card" id="progress-card">
+    <div class="section-title">処理状況</div>
+    <div class="stats-bar">
+      <div>検索中: <span class="current-brand" id="current-brand">—</span></div>
+      <div class="stats-row">
+        <span class="stat-chip" id="chip-whitelist">⚠️ 大手除外: 0件</span>
+        <span class="stat-chip" id="chip-oem">🚫 OEM除外: 0件</span>
+        <span class="stat-chip" id="chip-success">✅ 取得成功: 0件</span>
+        <span class="stat-chip" id="chip-fail">✕ 未取得: 0件</span>
+        <span class="stat-chip" id="chip-remaining">残り: —件</span>
+      </div>
+    </div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progress-fill"></div>
+    </div>
+    <div class="progress-label" id="progress-label">0 / 0</div>
+    <div id="log"></div>
+  </div>
+
+  <!-- クォータ停止 -->
+  <div id="quota-banner">
+    <strong>⏸ 本日のAPI上限に達しました</strong><br>
+    <span id="quota-msg"></span><br>
+    <span style="color:#6b7a99;font-size:0.85rem;">次回アクセス時に「続きから再開」ボタンが表示されます。</span>
+    <div style="margin-top:12px;">
+      <button class="btn btn-success" id="download-btn-quota" onclick="downloadCSV()">📥 途中結果をダウンロード</button>
+    </div>
+  </div>
+
+  <!-- 完了 -->
+  <div id="done-banner">
+    <strong>🎉 全件処理が完了しました！</strong><br>
+    <span id="done-stats"></span>
+    <div style="margin-top:14px;">
+      <button class="btn btn-success" id="download-btn" onclick="downloadCSV()">📥 CSVをダウンロード</button>
+      <button class="btn btn-secondary" style="margin-left:10px;" onclick="resetAll()">🔄 新しいCSVを処理</button>
+    </div>
+  </div>
+</div>
+
+<!-- 再開モーダル -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h2>⏮ 前回の続きから再開しますか？</h2>
+    <p id="modal-msg"></p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="startNew()">🆕 新規開始</button>
+      <button class="btn btn-primary" onclick="startResume()">▶ 続きから再開</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// 状態管理
+// ---------------------------------------------------------------------------
+let state = 'idle'; // idle | uploaded | processing | quota_stop | complete
+let totalBrands = 0;
+let processedCount = 0;
+let evtSource = null;
+let resumeMode = false; // 再開時は true
+
+// ---------------------------------------------------------------------------
+// localStorage: APIキー・CX の保存・復元
+// ---------------------------------------------------------------------------
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('api-key').value = localStorage.getItem('googleApiKey') || '';
+  document.getElementById('cx').value = localStorage.getItem('googleCx') || '';
+
+  document.getElementById('api-key').addEventListener('input', e => {
+    localStorage.setItem('googleApiKey', e.target.value);
+    updateStartBtn();
+  });
+  document.getElementById('cx').addEventListener('input', e => {
+    localStorage.setItem('googleCx', e.target.value);
+    updateStartBtn();
+  });
+
+  // 前回の続きを確認
+  checkResume();
+});
+
+// ---------------------------------------------------------------------------
+// ドラッグ&ドロップ / ファイル選択
+// ---------------------------------------------------------------------------
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) uploadFile(file);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) uploadFile(fileInput.files[0]);
+});
+
+async function uploadFile(file) {
+  if (!file.name.endsWith('.csv')) {
+    showError('CSVファイル（.csv）を選択してください。');
+    return;
+  }
+  hideError();
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res = await fetch('/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showError(data.error || 'アップロードに失敗しました。');
+      return;
+    }
+
+    totalBrands = data.deduplicated_count;
+    document.getElementById('dedup-info').textContent = `✅ ${data.message}（${data.deduplicated_count}件を処理します）`;
+    document.getElementById('dedup-info').style.display = 'block';
+    document.getElementById('api-card').style.display = 'block';
+    updateStartBtn();
+    state = 'uploaded';
+  } catch (e) {
+    showError('ネットワークエラーが発生しました。');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 開始ボタン制御
+// ---------------------------------------------------------------------------
+function updateStartBtn() {
+  const btn = document.getElementById('start-btn');
+  const apiKey = document.getElementById('api-key').value.trim();
+  const cx = document.getElementById('cx').value.trim();
+  btn.disabled = !(state === 'uploaded' && apiKey && cx);
+}
+
+document.getElementById('start-btn').addEventListener('click', () => {
+  startProcessing(false);
+});
+
+// ---------------------------------------------------------------------------
+// 再開チェック
+// ---------------------------------------------------------------------------
+async function checkResume() {
+  try {
+    const res = await fetch('/resume-check');
+    const data = await res.json();
+    if (data.has_resume) {
+      document.getElementById('modal-msg').textContent = data.message;
+      document.getElementById('modal-overlay').classList.add('show');
+    }
+  } catch (e) { /* 無視 */ }
+}
+
+function startNew() {
+  document.getElementById('modal-overlay').classList.remove('show');
+  resumeMode = false;
+}
+
+async function startResume() {
+  document.getElementById('modal-overlay').classList.remove('show');
+  resumeMode = true;
+
+  // 既存の進捗からブランド数を取得
+  try {
+    const res = await fetch('/resume-check');
+    const data = await res.json();
+    if (data.has_resume) {
+      totalBrands = data.total;
+      processedCount = data.processed;
+      // API設定を表示してから開始
+      document.getElementById('api-card').style.display = 'block';
+      document.getElementById('dedup-info').textContent = `⏮ 前回の続きから再開（残り${data.remaining}件）`;
+      document.getElementById('dedup-info').style.display = 'block';
+      state = 'uploaded';
+      updateStartBtn();
+
+      // APIキー入力済みなら直接開始
+      const apiKey = document.getElementById('api-key').value.trim();
+      const cx = document.getElementById('cx').value.trim();
+      if (apiKey && cx) {
+        startProcessing(true);
+      }
+    }
+  } catch (e) { /* 無視 */ }
+}
+
+// ---------------------------------------------------------------------------
+// 処理開始
+// ---------------------------------------------------------------------------
+async function startProcessing(resume) {
+  const apiKey = document.getElementById('api-key').value.trim();
+  const cx = document.getElementById('cx').value.trim();
+  if (!apiKey || !cx) { showError('APIキーと検索エンジンIDを入力してください。'); return; }
+
+  state = 'processing';
+  document.getElementById('start-btn').disabled = true;
+  document.getElementById('progress-card').style.display = 'block';
+  document.getElementById('quota-banner').style.display = 'none';
+  document.getElementById('done-banner').style.display = 'none';
+  clearLog();
+
+  try {
+    const res = await fetch('/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: apiKey, cx, resume }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      showError(data.error || '処理の開始に失敗しました。');
+      state = 'uploaded';
+      updateStartBtn();
+      return;
+    }
+  } catch (e) {
+    showError('サーバーへの接続に失敗しました。');
+    state = 'uploaded';
+    updateStartBtn();
+    return;
+  }
+
+  // SSE接続
+  connectSSE();
+}
+
+// ---------------------------------------------------------------------------
+// SSE接続
+// ---------------------------------------------------------------------------
+let reconnectDelay = 1000;
+
+function connectSSE() {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+
+  evtSource = new EventSource('/stream');
+
+  evtSource.onmessage = (e) => {
+    reconnectDelay = 1000;
+    const event = JSON.parse(e.data);
+    handleEvent(event);
+  };
+
+  evtSource.onerror = () => {
+    if (state === 'processing') {
+      evtSource.close();
+      evtSource = null;
+      setTimeout(() => {
+        if (state === 'processing') connectSSE();
+      }, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// SSEイベントハンドラ
+// ---------------------------------------------------------------------------
+function handleEvent(event) {
+  switch (event.type) {
+    case 'ping':
+      break;
+
+    case 'searching':
+      document.getElementById('current-brand').textContent = event.brand;
+      updateStats(event.stats);
+      addLog(`🔍 検索中: ${event.brand}`);
+      break;
+
+    case 'result': {
+      processedCount++;
+      updateStats(event.stats);
+      updateProgress();
+      const flag = event.flag;
+      let cls = 'ok', icon = '◎';
+      if (flag === '⚠️ 大手企業の可能性') { cls = 'wl'; icon = '⚠️'; }
+      else if (flag === '🚫 中国系OEMの可能性') { cls = 'oem'; icon = '🚫'; }
+      else if (flag === '✕') { cls = 'ng'; icon = '✕'; }
+      else if (flag === '△') { icon = '△'; }
+      addLog(`${icon} ${event.brand}`, cls);
+      break;
+    }
+
+    case 'quota': {
+      state = 'quota_stop';
+      updateStats(event.stats);
+      if (evtSource) { evtSource.close(); evtSource = null; }
+      const processed = event.processed || processedCount;
+      const remaining = event.remaining || (totalBrands - processed);
+      document.getElementById('quota-msg').textContent =
+        `本日完了：${processed}件処理済、残り${remaining}件は明日以降に再開できます。`;
+      document.getElementById('quota-banner').style.display = 'block';
+      document.getElementById('current-brand').textContent = '停止';
+      break;
+    }
+
+    case 'done': {
+      state = 'complete';
+      updateStats(event.stats);
+      processedCount = totalBrands;
+      updateProgress();
+      if (evtSource) { evtSource.close(); evtSource = null; }
+      document.getElementById('current-brand').textContent = '完了';
+      const s = event.stats;
+      document.getElementById('done-stats').textContent =
+        `⚠️大手: ${s.whitelist}件 / 🚫OEM: ${s.oem}件 / ✅取得成功: ${s.success}件 / ✕未取得: ${s.fail}件`;
+      document.getElementById('done-banner').style.display = 'block';
+      break;
+    }
+
+    case 'stream_end':
+      if (evtSource) { evtSource.close(); evtSource = null; }
+      break;
+
+    case 'error':
+      addLog(`❌ エラー: ${event.message}`, 'ng');
+      break;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// UI更新ヘルパー
+// ---------------------------------------------------------------------------
+function updateStats(stats) {
+  if (!stats) return;
+  document.getElementById('chip-whitelist').textContent = `⚠️ 大手除外: ${stats.whitelist || 0}件`;
+  document.getElementById('chip-oem').textContent = `🚫 OEM除外: ${stats.oem || 0}件`;
+  document.getElementById('chip-success').textContent = `✅ 取得成功: ${stats.success || 0}件`;
+  document.getElementById('chip-fail').textContent = `✕ 未取得: ${stats.fail || 0}件`;
+  const done = (stats.whitelist || 0) + (stats.oem || 0) + (stats.success || 0) + (stats.fail || 0);
+  const rem = Math.max(0, totalBrands - done);
+  document.getElementById('chip-remaining').textContent = `残り: ${rem}件`;
+}
+
+function updateProgress() {
+  const pct = totalBrands > 0 ? Math.round((processedCount / totalBrands) * 100) : 0;
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = `${processedCount} / ${totalBrands}`;
+}
+
+function addLog(msg, cls = '') {
+  const log = document.getElementById('log');
+  const p = document.createElement('p');
+  if (cls) p.className = cls;
+  p.textContent = msg;
+  log.appendChild(p);
+  log.scrollTop = log.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('log').innerHTML = '';
+  processedCount = 0;
+  updateProgress();
+  document.getElementById('current-brand').textContent = '—';
+  updateStats({ whitelist: 0, oem: 0, success: 0, fail: 0 });
+}
+
+// ---------------------------------------------------------------------------
+// ダウンロード
+// ---------------------------------------------------------------------------
+function downloadCSV() {
+  window.location.href = '/download';
+}
+
+// ---------------------------------------------------------------------------
+// リセット
+// ---------------------------------------------------------------------------
+async function resetAll() {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  state = 'idle';
+  try { await fetch('/clear', { method: 'POST' }); } catch (e) {}
+  document.getElementById('dedup-info').style.display = 'none';
+  document.getElementById('api-card').style.display = 'none';
+  document.getElementById('progress-card').style.display = 'none';
+  document.getElementById('quota-banner').style.display = 'none';
+  document.getElementById('done-banner').style.display = 'none';
+  document.getElementById('file-input').value = '';
+  hideError();
+  clearLog();
+  totalBrands = 0;
+}
+
+// ---------------------------------------------------------------------------
+// エラー表示
+// ---------------------------------------------------------------------------
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+function hideError() {
+  document.getElementById('error-msg').style.display = 'none';
+}
+</script>
+</body>
+</html>

@@ -680,5 +680,11 @@ function hideError() {
   document.getElementById('error-msg').style.display = 'none';
 }
 </script>
+<div id="version-tag" style="position:fixed;bottom:8px;right:12px;font-size:11px;color:#aaa;pointer-events:none;"></div>
+<script>
+  fetch('/version').then(r=>r.json()).then(d=>{
+    document.getElementById('version-tag').textContent = '最終更新: ' + d.deployed_at;
+  }).catch(()=>{});
+</script>
 </body>
 </html>

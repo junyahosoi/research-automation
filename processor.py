@@ -79,17 +79,32 @@ def parse_and_deduplicate(file_bytes: bytes) -> tuple[list[dict], int]:
     return list(seen.values()), original_count
 
 
-def _make_empty_result(brand: str, flag: str) -> dict:
-    """ホワイトリスト・OEM判定時の空の結果を生成する。"""
+FLAG_REASONS = {
+    "⚠️ 大手企業の可能性": "ホワイトリスト該当",
+    "🚫 中国系OEMの可能性": "OEMパターン該当",
+    "◎": "3項目以上取得",
+    "△": "1〜2項目取得",
+    "✕": "公式サイト未発見",
+}
+
+
+def _make_empty_result(brand: str, flag: str, row: dict, reason: str | None = None) -> dict:
+    """空の結果を生成する。Keepa元データを含む。"""
     return {
-        "ブランド名": brand,
+        "フラグ": flag,
+        "理由": reason or FLAG_REASONS.get(flag, ""),
+        "ブランド": brand,
+        "商品名": row.get("商品名", ""),
+        "売れ筋ランキング: 現在価格": row.get("売れ筋ランキング: 現在価格", ""),
+        "Buy Box: 現在価格": row.get("Buy Box: 現在価格", ""),
+        "ASIN": row.get("ASIN", ""),
+        "URL: Amazon": row.get("URL: Amazon", ""),
         "会社名": "",
         "HP URL": "",
         "電話番号": "",
         "FAX番号": "",
         "メールアドレス": "",
         "フォームURL": "",
-        "フラグ": flag,
     }
 
 
@@ -151,7 +166,7 @@ async def run_pipeline(
 
             if flag == "⚠️ 大手企業の可能性":
                 stats[STAT_WHITELIST] += 1
-                result = _make_empty_result(brand, flag)
+                result = _make_empty_result(brand, flag, row)
                 results.append(result)
                 await checkpoint(brand, result, dict(stats), brands_data, results)
                 yield {"type": "result", "brand": brand, "flag": flag, "stats": dict(stats)}
@@ -159,13 +174,13 @@ async def run_pipeline(
 
             if flag == "🚫 中国系OEMの可能性":
                 stats[STAT_OEM] += 1
-                result = _make_empty_result(brand, flag)
+                result = _make_empty_result(brand, flag, row)
                 results.append(result)
                 await checkpoint(brand, result, dict(stats), brands_data, results)
                 yield {"type": "result", "brand": brand, "flag": flag, "stats": dict(stats)}
                 continue
 
-            # --- Google検索 ---
+            # --- 検索 ---
             yield {"type": "searching", "brand": brand, "stats": dict(stats)}
 
             official_url, error = await find_official_site(
@@ -185,16 +200,29 @@ async def run_pipeline(
 
             if not official_url:
                 stats[STAT_FAIL] += 1
-                result = _make_empty_result(brand, "✕")
-                result["フラグ"] = "✕"
+                result = _make_empty_result(brand, "✕", row, reason="公式サイト未発見")
             else:
                 # --- スクレイピング ---
                 scraped = await scrape_company_info(official_url, client)
+                scraped_flag = scraped.get("フラグ", "✕")
+                reason = FLAG_REASONS.get(scraped_flag, "情報取得0件") if scraped_flag != "✕" else "情報取得0件"
                 result = {
-                    "ブランド名": brand,
-                    **scraped,
+                    "フラグ": scraped_flag,
+                    "理由": reason,
+                    "ブランド": brand,
+                    "商品名": row.get("商品名", ""),
+                    "売れ筋ランキング: 現在価格": row.get("売れ筋ランキング: 現在価格", ""),
+                    "Buy Box: 現在価格": row.get("Buy Box: 現在価格", ""),
+                    "ASIN": row.get("ASIN", ""),
+                    "URL: Amazon": row.get("URL: Amazon", ""),
+                    "会社名": scraped.get("会社名", ""),
+                    "HP URL": scraped.get("HP URL", ""),
+                    "電話番号": scraped.get("電話番号", ""),
+                    "FAX番号": scraped.get("FAX番号", ""),
+                    "メールアドレス": scraped.get("メールアドレス", ""),
+                    "フォームURL": scraped.get("フォームURL", ""),
                 }
-                if result["フラグ"] in ("◎", "△"):
+                if scraped_flag in ("◎", "△"):
                     stats[STAT_SUCCESS] += 1
                 else:
                     stats[STAT_FAIL] += 1

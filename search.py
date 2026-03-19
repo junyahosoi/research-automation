@@ -49,6 +49,7 @@ EC_DOMAINS = {
     "youtube.com",
     "ameblo.jp",
     "hatenablog.com",
+    "hatenadiary.jp",
     "note.com",
     "linkedin.com",
 }

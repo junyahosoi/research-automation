@@ -32,17 +32,28 @@ def _clean_url(url: str) -> str:
         return url
 
 
+# 日本の主要メールドメイン（TLD）
+_VALID_EMAIL_TLDS = {
+    "jp", "com", "net", "org", "co.jp", "ne.jp", "or.jp", "gr.jp",
+    "ac.jp", "go.jp", "ed.jp", "io", "biz", "info",
+}
+
+
 def _is_valid_email(email: str) -> bool:
     """メールアドレスとして有効かどうかを検証する。"""
     if not email or "@" not in email:
         return False
-    # 画像ファイル名の誤取得を除外
-    local = email.split("@")[0].lower()
-    if any(local.endswith(ext) for ext in _IMAGE_EXTENSIONS):
+    # メール全体が画像拡張子で終わる場合は除外（例: img@2x.webp）
+    if any(email.lower().endswith(ext) for ext in _IMAGE_EXTENSIONS):
         return False
     # 無効ドメインを除外
     domain = email.split("@")[-1].lower()
     if domain in _INVALID_EMAIL_DOMAINS:
+        return False
+    # 日本向けツールなので、許可TLD以外の外国ドメインは除外（例: .de .cn .ru）
+    tld = domain.split(".")[-1]
+    second_level = ".".join(domain.split(".")[-2:])
+    if second_level not in _VALID_EMAIL_TLDS and tld not in _VALID_EMAIL_TLDS:
         return False
     return True
 
@@ -51,8 +62,11 @@ def _is_valid_company_name(name: str) -> bool:
     """会社名として有効かどうかを検証する（文章断片を除外）。"""
     if not name:
         return False
+    # 文字列中に句点（。）を含む場合は文章断片と判断
+    if "。" in name:
+        return False
     # 文章末尾パターンで終わる場合は無効
-    if re.search(r"[。、．,]$|です。?$|ます。?$|した。?$|して$|であり$", name):
+    if re.search(r"[、．,]$|です。?$|ます。?$|した。?$|して$|であり$", name):
         return False
     return True
 
